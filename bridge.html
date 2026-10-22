@@ -100,6 +100,7 @@
 
     // Matches are kept in IndexedDB: with the round stats they would fill localStorage quickly.
     var matchDb = null;
+    var lastSaved = 0;
 
     function openMatches(mode) {
         if (!matchDb) {
@@ -124,9 +125,9 @@
         });
     }
 
-    // Match ids grow over time, so the longer or larger id is the newer match.
+    // The addon saves the oldest match of a batch first, so a later save is a newer match.
     function newerFirst(a, b) {
-        return b.id.length - a.id.length || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+        return (b.saved || 0) - (a.saved || 0);
     }
 
     function stripRounds(match) {
@@ -149,9 +150,14 @@
         },
         saveMatch: function (msg) {
             var match = msg.match;
-            if (!match || !/^\d+$/.test(match.id) || !/^\d{17}$/.test(match.owner)) throw new Error('invalid match');
+            if (!match || !/^[\w-]+$/.test(match.id) || !/^\d{17}$/.test(match.owner)) throw new Error('invalid match');
             return openMatches('readwrite').then(function (store) {
-                return result(store.put(match));
+                // A partial match saved earlier keeps its place in the list.
+                return result(store.get(match.id)).then(function (old) {
+                    lastSaved = Math.max(Date.now(), lastSaved + 1);
+                    match.saved = old && old.saved ? old.saved : lastSaved;
+                    return result(store.put(match));
+                });
             }).then(function () { return true; });
         },
         listMatches: function (msg) {
