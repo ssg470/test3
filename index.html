@@ -13,11 +13,33 @@
         document.title = 'T3_RES:' + JSON.stringify(obj);
     }
 
+    // Only .json files of this site, so the page can't be used to fetch anything else.
+    function get(msg) {
+        if (!/^[\w-]+(\/[\w-]+)*\.json$/.test(msg.path)) {
+            reply({ id: msg.id, ok: 0, e: 'invalid path' });
+            return;
+        }
+        fetch(msg.path, { cache: 'no-store' })
+            .then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.text();
+            })
+            .then(function (text) {
+                reply({ id: msg.id, ok: 1, v: text });
+            }, function (e) {
+                reply({ id: msg.id, ok: 0, e: String(e) });
+            });
+    }
+
     function onHash() {
         var msg;
         try {
             msg = JSON.parse(decodeURIComponent(location.hash.slice(1)));
         } catch (e) {
+            return;
+        }
+        if (msg.op === 'get') {
+            get(msg);
             return;
         }
         try {
