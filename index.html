@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>T3_INIT</title>
+</head>
+<body>
+<script>
+(function () {
+    'use strict';
+
+    function reply(obj) {
+        document.title = 'T3_RES:' + JSON.stringify(obj);
+    }
+
+    function onHash() {
+        var msg;
+        try {
+            msg = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+        } catch (e) {
+            return;
+        }
+        try {
+            if (msg.op === 'save') localStorage.setItem(msg.k, msg.v);
+            reply({ id: msg.id, ok: 1, v: localStorage.getItem(msg.k) });
+        } catch (e) {
+            reply({ id: msg.id, ok: 0, e: String(e) });
+        }
+    }
+
+    window.addEventListener('hashchange', onHash);
+
+    try {
+        localStorage.setItem('_p', '1');
+        localStorage.removeItem('_p');
+        document.title = 'T3_READY:' + location.origin;
+    } catch (e) {
+        document.title = 'T3_NOSTORAGE:' + e;
+    }
+})();
+</script>
+</body>
+</html>
