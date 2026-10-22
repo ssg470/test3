@@ -187,21 +187,32 @@
                 });
             }).then(function () { return true; });
         },
+        // owner '*' lists the matches of all accounts. A match two own accounts played is stored once,
+        // under the account that saved it last, so an account's list goes by the players, not the owner.
         listMatches: function (msg) {
+            var all = msg.owner === '*';
             return openMatches('readonly').then(function (store) {
-                return result(store.index('owner').getAll(String(msg.owner)));
+                return result(store.getAll());
             }).then(function (matches) {
+                if (!all) {
+                    matches = matches.filter(function (m) {
+                        return m.owner === msg.owner || (m.teams || []).some(function (players) {
+                            return players.some(function (p) { return p.xuid === msg.owner; });
+                        });
+                    });
+                }
                 matches.sort(newerFirst);
                 var offset = Math.max(0, msg.offset | 0);
                 var limit = Math.min(10, Math.max(1, msg.limit | 0));
                 var items = matches.slice(offset, offset + limit).map(function (m) {
+                    var viewer = all ? m.owner : msg.owner;
                     var team = -1, me = {};
                     (m.teams || []).forEach(function (players, t) {
                         players.forEach(function (p) {
-                            if (p.xuid === m.owner) { team = t; me = p; }
+                            if (p.xuid === viewer) { team = t; me = p; }
                         });
                     });
-                    return { id: m.id, time: m.time, map: m.map, mode: m.mode, skillGroup: m.skillGroup, score: m.score, outcome: m.outcome, team: team, k: me.kills, a: me.assists, d: me.deaths };
+                    return { id: m.id, owner: viewer, time: m.time, map: m.map, mode: m.mode, skillGroup: m.skillGroup, score: m.score, outcome: m.outcome, team: team, k: me.kills, a: me.assists, d: me.deaths };
                 });
                 return JSON.stringify({ total: matches.length, items: items });
             });
