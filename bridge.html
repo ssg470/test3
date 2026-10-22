@@ -43,7 +43,9 @@
                 return res.json();
             })
             .then(function (players) {
-                var found = players.filter(function (p) { return p.steamid === msg.xuid; })[0];
+                var found = players.filter(function (p) {
+                    return Array.isArray(p.steamids) && p.steamids.indexOf(msg.xuid) >= 0;
+                })[0];
                 reply({ id: msg.id, ok: 1, v: found ? JSON.stringify(found) : null });
             }, function (e) {
                 reply({ id: msg.id, ok: 0, e: String(e) });

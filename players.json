@@ -1,20 +1,11 @@
 [
     {
-        "steamid": "76561199119644913",
+        "steamids": ["76561199119644913", "76561198711583108"],
         "name": "TestPlayerOne",
-        "description": "Test entry. Entry fragger, plays for a made-up team called Test Five.",
+        "description": "Test entry. Entry fragger, plays for a made-up team called Test Five. Both test accounts belong to this player.",
         "links": {
-            "Twitch": "https://www.twitch.tv/example",
-            "YouTube": "https://www.youtube.com/@example"
-        }
-    },
-    {
-        "steamid": "76561198711583108",
-        "name": "TestPlayerTwo",
-        "description": "Test entry. AWPer and in-game leader, known for clutches.",
-        "links": {
-            "X": "https://x.com/example",
-            "Instagram": "https://www.instagram.com/example"
+            "Twitch": "twitch.tv/example",
+            "YouTube": "youtube.com/@example"
         }
     }
 ]
