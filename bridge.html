@@ -19,7 +19,7 @@
             reply({ id: msg.id, ok: 0, e: 'invalid path' });
             return;
         }
-        fetch(msg.path, { cache: 'no-store' })
+        fetch(msg.path, { cache: 'no-cache' })
             .then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
@@ -31,17 +31,27 @@
             });
     }
 
+    // Loaded once per page; 'no-cache' asks GitHub whether the file changed instead of downloading it again.
+    var playersTable = null;
+
+    function loadPlayers() {
+        if (!playersTable) {
+            playersTable = fetch('players.json', { cache: 'no-cache' }).then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            });
+            playersTable.catch(function () { playersTable = null; });
+        }
+        return playersTable;
+    }
+
     // Returns one entry of players.json: the whole table wouldn't fit into the title.
     function player(msg) {
         if (!/^\d{17}$/.test(msg.xuid)) {
             reply({ id: msg.id, ok: 0, e: 'invalid steamid' });
             return;
         }
-        fetch('players.json', { cache: 'no-store' })
-            .then(function (res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                return res.json();
-            })
+        loadPlayers()
             .then(function (players) {
                 var found = players.filter(function (p) {
                     return Array.isArray(p.steamids) && p.steamids.indexOf(msg.xuid) >= 0;
@@ -79,18 +89,38 @@
     }
 
     // Each match counts once: "Your Matches" returns the same matches on every sync.
-    function recordMatch(msg) {
-        var match = msg.match;
+    function applyMatch(data, match) {
         if (!match || !/^[\w-]+$/.test(match.id) || !Array.isArray(match.players)) throw new Error('invalid match');
-        var data = readPlayed();
         var id = stableId(match.id);
         if (data.matches[id]) return false;
         data.matches[id] = 1;
         match.players.forEach(function (xuid) {
             if (/^\d{17}$/.test(xuid)) data.players[xuid] = count(data.players[xuid]) + 1;
         });
-        localStorage.setItem(PLAYED_KEY, JSON.stringify(data));
         return true;
+    }
+
+    // Kept for addon versions that send one match per request.
+    function recordMatch(msg) {
+        var data = readPlayed();
+        var added = applyMatch(data, msg.match);
+        if (added) localStorage.setItem(PLAYED_KEY, JSON.stringify(data));
+        return added;
+    }
+
+    // All matches of a sync in one read and one write of the table.
+    function recordMatches(msg) {
+        if (!Array.isArray(msg.matches)) throw new Error('invalid matches');
+        var data = readPlayed();
+        var added = 0;
+        // An invalid match is skipped, as it was when every match had its own request.
+        msg.matches.forEach(function (match) {
+            try {
+                if (applyMatch(data, match)) added++;
+            } catch (e) {}
+        });
+        if (added) localStorage.setItem(PLAYED_KEY, JSON.stringify(data));
+        return added;
     }
 
     // One page, most frequent first: the whole table wouldn't fit into the title.
@@ -217,6 +247,19 @@
                 return JSON.stringify({ total: matches.length, items: items });
             });
         },
+        // The rounds of the five players of a team, in one answer.
+        getTeamRounds: function (msg) {
+            return openMatches('readonly').then(function (store) {
+                return result(store.get(String(msg.matchId)));
+            }).then(function (match) {
+                var players = match && match.teams && match.teams[msg.team | 0];
+                if (!players) return null;
+                return JSON.stringify(players.map(function (p) {
+                    return { xuid: p.xuid, rounds: p.rounds || {} };
+                }));
+            });
+        },
+        // Kept for addon versions that ask for the rounds of each player.
         getRounds: function (msg) {
             return openMatches('readonly').then(function (store) {
                 return result(store.get(String(msg.matchId)));
@@ -268,6 +311,8 @@
             var v;
             if (msg.op === 'recordMatch') {
                 v = recordMatch(msg);
+            } else if (msg.op === 'recordMatches') {
+                v = recordMatches(msg);
             } else if (msg.op === 'listPlayers') {
                 v = listPlayers(msg);
             } else {
