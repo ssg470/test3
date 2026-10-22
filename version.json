@@ -1,5 +1,7 @@
 {
     "version": "1.0.2",
-    "url": "https://www.youtube.com",
-    "notes": "test"
+    "date": "2026-10-22",
+    "changes": [
+        "test"
+    ]
 }

@@ -2,63 +2,57 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>T3_INIT</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>test3</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #1b1e24;
+            color: #d6d8dc;
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        h1 {
+            margin: 0 0 4px;
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: 600;
+        }
+        .date {
+            color: #8a8f99;
+            font-size: 14px;
+        }
+        ul {
+            margin: 16px 0 0;
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 6px;
+        }
+    </style>
 </head>
 <body>
+    <h1 id="title">test3</h1>
+    <div id="date" class="date"></div>
+    <ul id="changes"></ul>
 <script>
 (function () {
     'use strict';
 
-    function reply(obj) {
-        document.title = 'T3_RES:' + JSON.stringify(obj);
-    }
-
-    // Only .json files of this site, so the page can't be used to fetch anything else.
-    function get(msg) {
-        if (!/^[\w-]+(\/[\w-]+)*\.json$/.test(msg.path)) {
-            reply({ id: msg.id, ok: 0, e: 'invalid path' });
-            return;
-        }
-        fetch(msg.path, { cache: 'no-store' })
-            .then(function (res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                return res.text();
-            })
-            .then(function (text) {
-                reply({ id: msg.id, ok: 1, v: text });
-            }, function (e) {
-                reply({ id: msg.id, ok: 0, e: String(e) });
+    fetch('version.json', { cache: 'no-store' })
+        .then(function (res) { return res.json(); })
+        .then(function (info) {
+            document.getElementById('title').textContent = 'Update ' + info.version;
+            document.getElementById('date').textContent = info.date || '';
+            var list = document.getElementById('changes');
+            (info.changes || []).forEach(function (change) {
+                var li = document.createElement('li');
+                li.textContent = change;
+                list.appendChild(li);
             });
-    }
-
-    function onHash() {
-        var msg;
-        try {
-            msg = JSON.parse(decodeURIComponent(location.hash.slice(1)));
-        } catch (e) {
-            return;
-        }
-        if (msg.op === 'get') {
-            get(msg);
-            return;
-        }
-        try {
-            if (msg.op === 'save') localStorage.setItem(msg.k, msg.v);
-            reply({ id: msg.id, ok: 1, v: localStorage.getItem(msg.k) });
-        } catch (e) {
-            reply({ id: msg.id, ok: 0, e: String(e) });
-        }
-    }
-
-    window.addEventListener('hashchange', onHash);
-
-    try {
-        localStorage.setItem('_p', '1');
-        localStorage.removeItem('_p');
-        document.title = 'T3_READY:' + location.origin;
-    } catch (e) {
-        document.title = 'T3_NOSTORAGE:' + e;
-    }
+        });
 })();
 </script>
 </body>
