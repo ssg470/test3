@@ -52,6 +52,51 @@
             });
     }
 
+    var PLAYED_KEY = 'test3_played_with';
+
+    function readPlayed() {
+        var data = null;
+        try {
+            data = JSON.parse(localStorage.getItem(PLAYED_KEY));
+        } catch (e) {}
+        if (!data || typeof data !== 'object') data = {};
+        data.matches = data.matches || {};
+        data.players = data.players || {};
+        return data;
+    }
+
+    // Each match counts once: "Your Matches" returns the same matches on every sync.
+    function recordMatch(msg) {
+        var match = msg.match;
+        if (!match || !/^[\w-]+$/.test(match.id) || !Array.isArray(match.players)) throw new Error('invalid match');
+        var data = readPlayed();
+        if (data.matches[match.id]) return false;
+        data.matches[match.id] = 1;
+        match.players.forEach(function (p) {
+            if (!p || !/^\d{17}$/.test(p.xuid)) return;
+            var entry = data.players[p.xuid] || { n: 0, name: '' };
+            entry.n++;
+            if (typeof p.name === 'string' && p.name) entry.name = p.name.slice(0, 32);
+            data.players[p.xuid] = entry;
+        });
+        localStorage.setItem(PLAYED_KEY, JSON.stringify(data));
+        return true;
+    }
+
+    // One page, most frequent first: the whole table wouldn't fit into the title.
+    function listPlayers(msg) {
+        var players = readPlayed().players;
+        var list = Object.keys(players).map(function (xuid) {
+            return { xuid: xuid, name: players[xuid].name, n: players[xuid].n };
+        });
+        list.sort(function (a, b) {
+            return b.n - a.n || a.name.localeCompare(b.name);
+        });
+        var offset = Math.max(0, msg.offset | 0);
+        var limit = Math.min(20, Math.max(1, msg.limit | 0));
+        return JSON.stringify({ total: list.length, items: list.slice(offset, offset + limit) });
+    }
+
     function onHash() {
         var msg;
         try {
@@ -68,8 +113,16 @@
             return;
         }
         try {
-            if (msg.op === 'save') localStorage.setItem(msg.k, msg.v);
-            reply({ id: msg.id, ok: 1, v: localStorage.getItem(msg.k) });
+            var v;
+            if (msg.op === 'recordMatch') {
+                v = recordMatch(msg);
+            } else if (msg.op === 'listPlayers') {
+                v = listPlayers(msg);
+            } else {
+                if (msg.op === 'save') localStorage.setItem(msg.k, msg.v);
+                v = localStorage.getItem(msg.k);
+            }
+            reply({ id: msg.id, ok: 1, v: v });
         } catch (e) {
             reply({ id: msg.id, ok: 0, e: String(e) });
         }
