@@ -206,6 +206,19 @@
                 return JSON.stringify({ total: matches.length, items: items });
             });
         },
+        getRounds: function (msg) {
+            return openMatches('readonly').then(function (store) {
+                return result(store.get(String(msg.matchId)));
+            }).then(function (match) {
+                var found = null;
+                ((match && match.teams) || []).forEach(function (players) {
+                    players.forEach(function (p) {
+                        if (p.xuid === msg.xuid) found = p.rounds || {};
+                    });
+                });
+                return found ? JSON.stringify(found) : null;
+            });
+        },
         getMatch: function (msg) {
             return openMatches('readonly').then(function (store) {
                 return result(store.get(String(msg.matchId)));
