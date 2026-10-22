@@ -65,6 +65,11 @@
         return data;
     }
 
+    // Entries were { n, name } before names stopped being stored.
+    function count(entry) {
+        return typeof entry === 'number' ? entry : (entry && entry.n) || 0;
+    }
+
     // Each match counts once: "Your Matches" returns the same matches on every sync.
     function recordMatch(msg) {
         var match = msg.match;
@@ -72,12 +77,8 @@
         var data = readPlayed();
         if (data.matches[match.id]) return false;
         data.matches[match.id] = 1;
-        match.players.forEach(function (p) {
-            if (!p || !/^\d{17}$/.test(p.xuid)) return;
-            var entry = data.players[p.xuid] || { n: 0, name: '' };
-            entry.n++;
-            if (typeof p.name === 'string' && p.name) entry.name = p.name.slice(0, 32);
-            data.players[p.xuid] = entry;
+        match.players.forEach(function (xuid) {
+            if (/^\d{17}$/.test(xuid)) data.players[xuid] = count(data.players[xuid]) + 1;
         });
         localStorage.setItem(PLAYED_KEY, JSON.stringify(data));
         return true;
@@ -87,21 +88,115 @@
     function listPlayers(msg) {
         var players = readPlayed().players;
         var list = Object.keys(players).map(function (xuid) {
-            return { xuid: xuid, name: players[xuid].name, n: players[xuid].n };
+            return { xuid: xuid, n: count(players[xuid]) };
         });
         list.sort(function (a, b) {
-            return b.n - a.n || a.name.localeCompare(b.name);
+            return b.n - a.n || (a.xuid < b.xuid ? -1 : 1);
         });
         var offset = Math.max(0, msg.offset | 0);
         var limit = Math.min(20, Math.max(1, msg.limit | 0));
         return JSON.stringify({ total: list.length, items: list.slice(offset, offset + limit) });
     }
 
+    // Matches are kept in IndexedDB: with the round stats they would fill localStorage quickly.
+    var matchDb = null;
+
+    function openMatches(mode) {
+        if (!matchDb) {
+            matchDb = new Promise(function (resolve, reject) {
+                var req = indexedDB.open('test3', 1);
+                req.onupgradeneeded = function () {
+                    req.result.createObjectStore('matches', { keyPath: 'id' }).createIndex('owner', 'owner');
+                };
+                req.onsuccess = function () { resolve(req.result); };
+                req.onerror = function () { reject(req.error); };
+            });
+        }
+        return matchDb.then(function (db) {
+            return db.transaction('matches', mode).objectStore('matches');
+        });
+    }
+
+    function result(req) {
+        return new Promise(function (resolve, reject) {
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+        });
+    }
+
+    // Match ids grow over time, so the longer or larger id is the newer match.
+    function newerFirst(a, b) {
+        return b.id.length - a.id.length || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+    }
+
+    function stripRounds(match) {
+        var copy = JSON.parse(JSON.stringify(match));
+        (copy.teams || []).forEach(function (team) {
+            team.forEach(function (p) { delete p.rounds; });
+        });
+        return copy;
+    }
+
+    // Answers are sent through the title, so they stay small: pages of summaries, a match without round stats.
+    var MATCH_OPS = {
+        hasMatches: function (msg) {
+            if (!Array.isArray(msg.ids)) throw new Error('invalid ids');
+            return openMatches('readonly').then(function (store) {
+                return Promise.all(msg.ids.map(function (id) { return result(store.get(String(id))); }));
+            }).then(function (matches) {
+                return JSON.stringify(matches.filter(function (m) { return m && m.full; }).map(function (m) { return m.id; }));
+            });
+        },
+        saveMatch: function (msg) {
+            var match = msg.match;
+            if (!match || !/^\d+$/.test(match.id) || !/^\d{17}$/.test(match.owner)) throw new Error('invalid match');
+            return openMatches('readwrite').then(function (store) {
+                return result(store.put(match));
+            }).then(function () { return true; });
+        },
+        listMatches: function (msg) {
+            return openMatches('readonly').then(function (store) {
+                return result(store.index('owner').getAll(String(msg.owner)));
+            }).then(function (matches) {
+                matches.sort(newerFirst);
+                var offset = Math.max(0, msg.offset | 0);
+                var limit = Math.min(10, Math.max(1, msg.limit | 0));
+                var items = matches.slice(offset, offset + limit).map(function (m) {
+                    var team = -1, me = {};
+                    (m.teams || []).forEach(function (players, t) {
+                        players.forEach(function (p) {
+                            if (p.xuid === m.owner) { team = t; me = p; }
+                        });
+                    });
+                    return { id: m.id, time: m.time, map: m.map, score: m.score, outcome: m.outcome, team: team, k: me.kills, a: me.assists, d: me.deaths };
+                });
+                return JSON.stringify({ total: matches.length, items: items });
+            });
+        },
+        getMatch: function (msg) {
+            return openMatches('readonly').then(function (store) {
+                return result(store.get(String(msg.matchId)));
+            }).then(function (match) {
+                return match ? JSON.stringify(stripRounds(match)) : null;
+            });
+        }
+    };
+
     function onHash() {
         var msg;
         try {
             msg = JSON.parse(decodeURIComponent(location.hash.slice(1)));
         } catch (e) {
+            return;
+        }
+        if (MATCH_OPS.hasOwnProperty(msg.op)) {
+            Promise.resolve().then(function () {
+                return MATCH_OPS[msg.op](msg);
+            }).then(function (v) {
+                reply({ id: msg.id, ok: 1, v: v });
+            }, function (e) {
+                reply({ id: msg.id, ok: 0, e: String(e) });
+            });
             return;
         }
         if (msg.op === 'get') {
