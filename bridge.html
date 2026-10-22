@@ -31,6 +31,25 @@
             });
     }
 
+    // Returns one entry of players.json: the whole table wouldn't fit into the title.
+    function player(msg) {
+        if (!/^\d{17}$/.test(msg.xuid)) {
+            reply({ id: msg.id, ok: 0, e: 'invalid steamid' });
+            return;
+        }
+        fetch('players.json', { cache: 'no-store' })
+            .then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(function (players) {
+                var found = players.filter(function (p) { return p.steamid === msg.xuid; })[0];
+                reply({ id: msg.id, ok: 1, v: found ? JSON.stringify(found) : null });
+            }, function (e) {
+                reply({ id: msg.id, ok: 0, e: String(e) });
+            });
+    }
+
     function onHash() {
         var msg;
         try {
@@ -40,6 +59,10 @@
         }
         if (msg.op === 'get') {
             get(msg);
+            return;
+        }
+        if (msg.op === 'player') {
+            player(msg);
             return;
         }
         try {
