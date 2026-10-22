@@ -60,9 +60,17 @@
             data = JSON.parse(localStorage.getItem(PLAYED_KEY));
         } catch (e) {}
         if (!data || typeof data !== 'object') data = {};
-        data.matches = data.matches || {};
         data.players = data.players || {};
+        data.matches = data.matches || {};
+        // Older ids were "<account>_<list position>_<match>"; only the match part is stable.
+        var matches = {};
+        Object.keys(data.matches).forEach(function (id) { matches[stableId(id)] = 1; });
+        data.matches = matches;
         return data;
+    }
+
+    function stableId(id) {
+        return String(id).split('_').pop();
     }
 
     // Entries were { n, name } before names stopped being stored.
@@ -75,8 +83,9 @@
         var match = msg.match;
         if (!match || !/^[\w-]+$/.test(match.id) || !Array.isArray(match.players)) throw new Error('invalid match');
         var data = readPlayed();
-        if (data.matches[match.id]) return false;
-        data.matches[match.id] = 1;
+        var id = stableId(match.id);
+        if (data.matches[id]) return false;
+        data.matches[id] = 1;
         match.players.forEach(function (xuid) {
             if (/^\d{17}$/.test(xuid)) data.players[xuid] = count(data.players[xuid]) + 1;
         });
@@ -105,9 +114,26 @@
     function openMatches(mode) {
         if (!matchDb) {
             matchDb = new Promise(function (resolve, reject) {
-                var req = indexedDB.open('test3', 1);
-                req.onupgradeneeded = function () {
-                    req.result.createObjectStore('matches', { keyPath: 'id' }).createIndex('owner', 'owner');
+                var req = indexedDB.open('test3', 2);
+                req.onupgradeneeded = function (e) {
+                    if (e.oldVersion < 1) {
+                        req.result.createObjectStore('matches', { keyPath: 'id' }).createIndex('owner', 'owner');
+                        return;
+                    }
+                    // Version 1 keyed matches by the unstable list id (see stableId).
+                    var store = req.transaction.objectStore('matches');
+                    store.openCursor().onsuccess = function (ev) {
+                        var cursor = ev.target.result;
+                        if (!cursor) return;
+                        var match = cursor.value;
+                        var id = stableId(match.id);
+                        if (id !== match.id) {
+                            cursor.delete();
+                            match.id = id;
+                            store.put(match);
+                        }
+                        cursor.continue();
+                    };
                 };
                 req.onsuccess = function () { resolve(req.result); };
                 req.onerror = function () { reject(req.error); };
@@ -143,7 +169,7 @@
         hasMatches: function (msg) {
             if (!Array.isArray(msg.ids)) throw new Error('invalid ids');
             return openMatches('readonly').then(function (store) {
-                return Promise.all(msg.ids.map(function (id) { return result(store.get(String(id))); }));
+                return Promise.all(msg.ids.map(function (id) { return result(store.get(stableId(id))); }));
             }).then(function (matches) {
                 return JSON.stringify(matches.filter(function (m) { return m && m.full; }).map(function (m) { return m.id; }));
             });
@@ -151,6 +177,7 @@
         saveMatch: function (msg) {
             var match = msg.match;
             if (!match || !/^[\w-]+$/.test(match.id) || !/^\d{17}$/.test(match.owner)) throw new Error('invalid match');
+            match.id = stableId(match.id);
             return openMatches('readwrite').then(function (store) {
                 // A partial match saved earlier keeps its place in the list.
                 return result(store.get(match.id)).then(function (old) {
