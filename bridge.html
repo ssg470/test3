@@ -201,7 +201,7 @@
                             if (p.xuid === m.owner) { team = t; me = p; }
                         });
                     });
-                    return { id: m.id, time: m.time, map: m.map, score: m.score, outcome: m.outcome, team: team, k: me.kills, a: me.assists, d: me.deaths };
+                    return { id: m.id, time: m.time, map: m.map, mode: m.mode, skillGroup: m.skillGroup, score: m.score, outcome: m.outcome, team: team, k: me.kills, a: me.assists, d: me.deaths };
                 });
                 return JSON.stringify({ total: matches.length, items: items });
             });
